@@ -579,7 +579,7 @@ function applySnapshot(d){
 function update(dt){
   if (joinOpen){ updateFx(dt); return; }
   if (state === 'title'){
-    if (hit(['Space','Digit1','Numpad1'])){ startLocal(); return; }
+    if (hit(['Enter','NumpadEnter','Space','Digit1','Numpad1'])){ startLocal(); return; }
     if (hit(['Digit2','Numpad2'])){ hostOnline(); return; }
     if (hit(['Digit3','Numpad3'])){ openJoin(); return; }
   }
@@ -590,7 +590,7 @@ function update(dt){
   if (isGuest()){ updateGuest(dt); return; }
 
   const inputs = [kbInput(net ? ALL : CTRL[0]), net ? remoteInput() : kbInput(CTRL[1])];
-  const spaceHit = hit(['Space']) || inputs[1].spaceHit;
+  const spaceHit = hit(['Enter','NumpadEnter','Space']) || inputs[1].spaceHit;
   const pauseHit = hit(['Escape','KeyP']) || inputs[1].pauseHit;
   if (state === 'end' && hit(['Backspace'])){ quitToMenu(); return; }
   if (state === 'end' && endT > 1 && spaceHit){ startGame(); return; }
@@ -829,7 +829,7 @@ function updateGuest(dt){
   const k = kbInput(ALL);
   if (k.upHit) gIn.uc++;
   if (k.yankHit) gIn.yc++;
-  if (hit(['Space'])) gIn.sc++;
+  if (hit(['Enter','NumpadEnter','Space'])) gIn.sc++;
   if (hit(['Escape','KeyP'])) gIn.pc++;
   if ((state === 'pause' || state === 'end') && hit(['Backspace'])){ quitToMenu(); return; }
   const msg = { t:'i', l:+k.left, r:+k.right, u:+k.up, d:+k.down, uc:gIn.uc, yc:gIn.yc, sc:gIn.sc, pc:gIn.pc };
@@ -1248,7 +1248,7 @@ function drawTitle(u, t){
   yy += 16 * u;
   const pulse = 0.6 + 0.4 * Math.sin(t * 4);
   const opts = [
-    ['[1] ou ESPACE', 'Jouer à deux sur ce PC', '#ffd23f'],
+    ['[1] ou ENTRÉE', 'Jouer à deux sur ce PC', '#ffd23f'],
     ['[2]', 'Créer une partie en ligne', '#b6ff6a'],
     ['[3]', 'Rejoindre une partie en ligne', '#3ec7ff'],
   ];
@@ -1307,7 +1307,7 @@ function drawEnd(u, t){
   if (info.quip) text('« ' + info.quip + ' »', cx, VH * 0.63, 20 * u, '#ffd23f', 'center', '600');
   if (endT > 1){
     ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 4);
-    text('ESPACE pour la revanche', cx, VH * 0.74, 28 * u, '#fff');
+    text('ENTRÉE pour la revanche', cx, VH * 0.74, 28 * u, '#fff');
     ctx.globalAlpha = 1;
     text('Retour arrière : menu principal', cx, VH * 0.8, 14 * u, 'rgba(255,255,255,0.5)', 'center', '600');
   }
