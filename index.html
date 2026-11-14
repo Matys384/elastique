@@ -149,7 +149,7 @@ function makePlayer(i){
     score:0, hearts:HEARTS, out:false, dead:false, respawnT:0, invuln:0, hitCD:0, stun:0,
     yankedBy:-1, yankT:0, screamed:false, pw:{}, airJumped:false, anim:0, climbing:false, item:null, roll:0, rollType:null,
     squash:0, face: i ? -1 : 1,
-    ch: CHARS[chosen[i]], color: CHARS[chosen[i]].color, name: CHARS[chosen[i]].name, ab: CHARS[chosen[i]].ability, buoyCD: 0
+    ch: CHARS[chosen[i]], color: CHARS[chosen[i]].color, name: CHARS[chosen[i]].name, ab: CHARS[chosen[i]].ability, buoyCD: 0, walkT: 0, walkCD: 0
   };
 }
 
@@ -338,6 +338,9 @@ function stepPlayer(p, o, inp, dt){
       }
     }
   }
+  if (!p.onGround && p.walkT > 0 && p.y + R >= lava.y && p.vy >= 0){
+    p.y = lava.y - R; p.vy = 0; p.onGround = true; p.plat = null; p.jumping = false; p.airJumped = false;
+  }
 }
 
 function ropeFx(p, dx, dy){
@@ -421,7 +424,7 @@ function respawn(p, o){
     if (best){ x = clamp(best.x + best.w / 2, R, WORLD_W - R); y = best.y - R - 2; }
     else { x = 500; y = lava.y - 400; }
   }
-  Object.assign(p, { x, y, vx:0, vy:0, dead:false, invuln:1.6, onGround:false, plat:null, anchored:false, jumping:false, stun:0, yankT:0 });
+  Object.assign(p, { x, y, vx:0, vy:0, dead:false, invuln:1.6, onGround:false, plat:null, anchored:false, jumping:false, stun:0, yankT:0, walkT:0 });
   burst(x, y, 16, '#fff', 200, 0.5, 0, 4);
   sfx(600, 0.15, 'triangle', 0.05, 400);
 }
@@ -606,7 +609,7 @@ function snapshot(){
     sl: sel.map(q => [q.c, q.ready ? 1 : 0]), ch: chosen,
     p: players.map(p => [r1(p.x), r1(p.y), Math.round(p.vx), Math.round(p.vy), p.score, p.dead ? 1 : 0, p.anchored ? 1 : 0,
                          r1(p.invuln), Math.round(p.squash * 100) / 100, p.face, r1(p.yankCD), p.hearts, r1(p.stun),
-                         Object.fromEntries(Object.entries(p.pw).map(([k, v]) => [k, r1(v)])), p.onGround ? 1 : 0, p.climbing ? 1 : 0, p.item, r1(p.roll)]),
+                         Object.fromEntries(Object.entries(p.pw).map(([k, v]) => [k, r1(v)])), p.onGround ? 1 : 0, p.climbing ? 1 : 0, p.item, r1(p.roll), r1(p.walkT)]),
     pl: plats.map(q => [q.id, Math.round(q.x), Math.round(q.y), Math.round(q.w), Math.round(q.vx), q.type, Math.round(q.crack * 100) / 100, q.falling ? 1 : 0]),
     co: coins.map(c => [c.plat.id, Math.round(c.off), Math.round(c.y), r1(c.t)]),
     fc: fcoins.map(c => [Math.round(c.x), Math.round(c.y), Math.round(c.vx), Math.round(c.vy)]),
@@ -626,7 +629,7 @@ function applySnapshot(d){
   d.p.forEach((a, i) => {
     const p = players[i], wasDead = p.dead;
     p.tx = a[0]; p.ty = a[1]; p.vx = a[2]; p.vy = a[3]; p.score = a[4]; p.dead = !!a[5]; p.anchored = !!a[6];
-    p.invuln = a[7]; p.squash = a[8]; p.face = a[9]; p.yankCD = a[10]; p.hearts = a[11]; p.stun = a[12]; p.pw = a[13] || {}; p.onGround = !!a[14]; p.climbing = !!a[15]; p.item = a[16] || null; p.roll = a[17] || 0;
+    p.invuln = a[7]; p.squash = a[8]; p.face = a[9]; p.yankCD = a[10]; p.hearts = a[11]; p.stun = a[12]; p.pw = a[13] || {}; p.onGround = !!a[14]; p.climbing = !!a[15]; p.item = a[16] || null; p.roll = a[17] || 0; p.walkT = a[18] || 0;
     if ((wasDead && !p.dead) || Math.hypot(p.x - p.tx, p.y - p.ty) > 200){ p.x = p.tx; p.y = p.ty; }
   });
   const map = new Map(plats.map(q => [q.id, q]));
@@ -685,7 +688,7 @@ function update(dt){
     if (inputs[i].upHit) p.jumpBuf = 0.13;
     p.yankCD -= dt; p.invuln -= dt; p.hitCD -= dt; p.stun -= dt; p.yankT -= dt;
     for (const k in p.pw){ p.pw[k] -= dt; if (p.pw[k] <= 0) delete p.pw[k]; }
-    p.buoyCD -= dt;
+    p.buoyCD -= dt; p.walkT -= dt; p.walkCD -= dt;
     if (p.roll > 0){ p.roll -= dt; if (p.roll <= 0){ p.item = p.rollType; sfx(1320, 0.18, 'square', 0.05); } }
   });
   players.forEach((p, i) => {
@@ -889,6 +892,11 @@ function update(dt){
     const o = players[1 - i];
     if (p.out) return;
     if (p.dead){ p.respawnT -= dt; if (p.respawnT <= 0) respawn(p, o); return; }
+    if (p.invuln <= 0 && p.ab === 'walk' && p.walkT <= 0 && p.walkCD <= 0 && p.y + R * 0.4 > lava.y){
+      p.walkT = 3; p.walkCD = 20; p.y = lava.y - R; if (p.vy > 0) p.vy = 0; p.onGround = true;
+      burst(p.x, lava.y, 24, '#ffe08a', 260, 0.7, 200, 4);
+      sfx(660, 0.4, 'sine', 0.07, 440);
+    }
     if (p.invuln <= 0 && p.y + R * 0.4 > lava.y){
       const buoy = !p.pw.shield && p.ab === 'buoy' && p.buoyCD <= 0;
       if (p.pw.shield || buoy){
@@ -1093,6 +1101,10 @@ const CHARS = [
   { name:'GUS', icon:'🧲', title:'Le radin', color:'#ffd23f', ability:'magnet', desc:'Aimant à pièces permanent (petite portée)', h:60,
     look:{ shirt:'#e0b020', shirt2:'#9c7a12', pants:'#5a4632', pantsD:'#3d2f22', skin:'#f1c6a0', skinD:'#c99a74', hair:'#d8d8d8', shoe:'#6b3e22', shoeD:'#4a2a16', hairStyle:'bald', top:'jacket', glasses:true, mustache:true },
     body:{} },
+  { name:'JÉSUS', icon:'✨', title:'Le sauveur', color:'#ffe08a', ability:'walk', desc:'Marche sur la lave pendant 3 s (toutes les 20 s)', h:62,
+    look:{ shirt:'#f4f1e8', shirt2:'#c9c3b0', pants:'#f4f1e8', pantsD:'#c9c3b0', skin:'#e2b48c', skinD:'#b98a62', hair:'#5b3a1e', shoe:'#7a4a24', shoeD:'#5a3418',
+           hairStyle:'long', top:'robe', shorts:true, fullBeard:true, halo:true, sash:'#a32b2b' },
+    body:{} },
 ];
 for (const C of CHARS){ C.body = Object.assign({}, DEF_BODY, C.body); C.hipH = (C.body.legA + C.body.legB) * C.body.scale; }
 
@@ -1166,6 +1178,11 @@ function drawHead(p, L, B, P, t){
     ctx.beginPath(); ctx.moveTo(-5, -3); ctx.quadraticCurveTo(-11, -1 + sw * 4, -12 + sw * 2, 7 + sw * 3); ctx.stroke();
   }
   if (L.hairStyle === 'bun'){ ctx.fillStyle = L.hair; ctx.beginPath(); ctx.arc(-5.5, -6, 3.6, 0, 7); ctx.fill(); }
+  if (L.hairStyle === 'long'){
+    const sw = clamp(-p.vx * p.face / 500, -1, 1) * 1.5;
+    ctx.fillStyle = L.hair;
+    ctx.beginPath(); ctx.moveTo(-6, -4); ctx.quadraticCurveTo(-9 + sw, 4, -7 + sw, 11); ctx.lineTo(-1, 9); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
+  }
   // visage
   const fg = ctx.createRadialGradient(2, -2, 1, 0, 0, 8);
   fg.addColorStop(0, L.skin); fg.addColorStop(1, L.skinD);
@@ -1175,6 +1192,11 @@ function drawHead(p, L, B, P, t){
   if (L.beard){
     ctx.fillStyle = 'rgba(40,25,15,0.38)';
     ctx.beginPath(); ctx.moveTo(-3, 2); ctx.lineTo(6.8, 1.4); ctx.lineTo(6.4, 6); ctx.quadraticCurveTo(2, 8.4, -3, 7); ctx.closePath(); ctx.fill();
+  }
+  if (L.fullBeard){
+    ctx.fillStyle = L.hair;
+    ctx.beginPath(); ctx.moveTo(-1.5, 1); ctx.lineTo(6.7, 1.2); ctx.lineTo(6.4, 6.2); ctx.quadraticCurveTo(3, 10.5, -1.5, 7.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = L.skin; ctx.beginPath(); ctx.ellipse(4.4, 4.3, 1.9, 0.9, 0, 0, 7); ctx.fill();
   }
   // cheveux
   ctx.fillStyle = L.hair;
@@ -1195,6 +1217,9 @@ function drawHead(p, L, B, P, t){
   } else if (L.hairStyle === 'bun'){
     ctx.beginPath(); ctx.ellipse(-0.5, -3.5, 7, 5, -0.15, Math.PI, 2 * Math.PI); ctx.fill();
     ctx.beginPath(); ctx.ellipse(-4.5, -1, 3, 5, 0, 0, 7); ctx.fill();
+  } else if (L.hairStyle === 'long'){
+    ctx.beginPath(); ctx.ellipse(-0.5, -3.6, 7.1, 5, -0.1, Math.PI, 2 * Math.PI); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-4.2, 0, 3.4, 6.5, 0, 0, 7); ctx.fill();
   } else if (L.hairStyle === 'bald'){
     ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.ellipse(1, -5.2, 2.6, 1.2, -0.3, 0, 7); ctx.fill();
     ctx.fillStyle = L.hair; ctx.beginPath(); ctx.ellipse(-4.6, 0, 2.6, 3.6, 0, 0, 7); ctx.fill();
@@ -1232,6 +1257,13 @@ function drawHead(p, L, B, P, t){
   else if (P.mouth === 'grit'){ ctx.fillStyle = '#fff'; ctx.fillRect(mx - 1.6, my - 0.6, 3.2, 1.4); }
   else if (P.mouth === 'dizzy'){ ctx.beginPath(); ctx.moveTo(mx - 2, my); ctx.quadraticCurveTo(mx, my - 1.5, mx + 2, my + 0.5); ctx.stroke(); }
   else { ctx.beginPath(); ctx.arc(mx - 0.4, my - 1, 1.8, 0.3, Math.PI - 0.6); ctx.stroke(); }
+  if (L.halo){
+    ctx.save();
+    ctx.shadowColor = '#ffe08a'; ctx.shadowBlur = 8;
+    ctx.strokeStyle = `rgba(255,224,138,${0.85 + 0.15 * Math.sin(t * 3)})`; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.ellipse(-0.5, -11.5, 6.2, 1.9, -0.1, 0, 7); ctx.stroke();
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -1257,6 +1289,16 @@ function drawTorso(L, B){
     for (let k = 0; k < 3; k++){ ctx.beginPath(); ctx.moveTo(wa / 2 - 6, -T + 14 + k * 3.2); ctx.lineTo(wa / 2 - 1, -T + 14 + k * 3.2); ctx.stroke(); }
     ctx.fillStyle = '#1d1d24'; ctx.fillRect(-wa / 2, -2, wa + 1, 3);
     ctx.fillStyle = L.skinD; ctx.fillRect(-2.5, -T - 7, 8, 5.5);
+  } else if (L.top === 'robe'){
+    const g = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+    g.addColorStop(0, L.shirt2); g.addColorStop(0.55, L.shirt); g.addColorStop(1, '#ffffff');
+    rr(-w / 2, -T - 3, w, T + 6, 5); ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-1, -T + 2); ctx.lineTo(-2, -3); ctx.moveTo(3, -T + 4); ctx.lineTo(3, -3); ctx.stroke();
+    ctx.strokeStyle = L.sash; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-w / 2 + 1, -T + 1); ctx.lineTo(w / 2 - 1, -4); ctx.stroke();
+    ctx.fillStyle = L.sash; ctx.fillRect(-w / 2, -3, w, 2.5);
+    ctx.fillStyle = L.skinD; ctx.fillRect(-1, -T - 6.5, 4, 4.5);
   } else if (L.top === 'rainbow'){
     const cy = -T / 2 - 1, rx = w / 2, ry = T / 2 + 3;
     ctx.save();
@@ -1341,6 +1383,19 @@ function drawHuman(p, t){
   drawHead(p, L, B, P, t);
   ctx.restore();
   drawLeg(1, hipY, P.legs[0], B, L, false);
+  if (L.top === 'robe'){
+    // bas de la tunique, qui suit les jambes
+    const k0 = [Math.sin(P.legs[0][0]) * B.legA, Math.sin(P.legs[1][0]) * B.legA];
+    const front = Math.max(k0[0], k0[1], 2) + 3, back = Math.min(k0[0], k0[1], -2) - 3;
+    const g = ctx.createLinearGradient(back, 0, front, 0);
+    g.addColorStop(0, L.shirt2); g.addColorStop(1, L.shirt);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(-B.tw / 2, hipY - 1); ctx.lineTo(B.tw / 2, hipY - 1);
+    ctx.lineTo(front, hipY + B.legA + 2); ctx.lineTo(back, hipY + B.legA + 2); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.1)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, hipY + 1); ctx.lineTo((front + back) / 2, hipY + B.legA + 1); ctx.stroke();
+  }
   drawArm(sh.x + 1, sh.y, P.arms[0], B, L, false);
   ctx.restore();
 }
@@ -1353,6 +1408,11 @@ function drawPlayer(p, t, leader, me){
   const ag = ctx.createRadialGradient(p.x, p.y - 8, 2, p.x, p.y - 8, 42);
   ag.addColorStop(0, hexA(p.color, 0.3)); ag.addColorStop(1, hexA(p.color, 0));
   ctx.fillStyle = ag; ctx.fillRect(p.x - 44, p.y - 52, 88, 88);
+  if (p.walkT > 0){
+    const wg = ctx.createRadialGradient(p.x, p.y, 4, p.x, p.y, 60);
+    wg.addColorStop(0, `rgba(255,230,140,${0.5 + 0.2 * Math.sin(t * 10)})`); wg.addColorStop(1, 'rgba(255,230,140,0)');
+    ctx.fillStyle = wg; ctx.fillRect(p.x - 60, p.y - 60, 120, 120);
+  }
   drawHuman(p, t);
   ctx.restore();
   const headY = p.y + R - p.ch.h;
@@ -1872,7 +1932,7 @@ function drawSelect(u, t){
   ctx.fillStyle = 'rgba(6,4,18,0.88)'; ctx.fillRect(0, 0, VW, VH);
   text('CHOISISSEZ VOTRE PERSONNAGE', VW / 2, 46 * u, 38 * u, '#ffd23f');
   const n = CHARS.length;
-  const cols = VW / u > 1180 ? n : 3;
+  const cols = VW / u > 1180 ? n : 4;
   const rows = Math.ceil(n / cols);
   const gap = 14 * u;
   const cw = Math.min(200 * u, (VW - 40 - gap * (cols - 1)) / cols);
